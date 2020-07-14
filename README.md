@@ -37,8 +37,8 @@ Example: http://127.0.0.1:5000/?url=http://aytm.com
 
 Or use curl
 
-'''
+```
 curl http://127.0.0.1:5000/?url=http://aytm.com
-'''
+```
 
 Step 5: The result will be saved in the file “result.csv”

@@ -1,5 +1,5 @@
 from flask import Flask, jsonify
-from flask import request,redirect, url_for
+from flask import request,redirect, url_for, make_response, session
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -7,11 +7,13 @@ from selenium import webdriver
 from PIL import Image
 from webdriver_manager.chrome import ChromeDriverManager
 import os
-import time;
-from gensim.summarization import summarize
+import time
+#from gensim.summarization import summarize
 import re
-
-
+import jwt
+from datetime import datetime, timedelta
+from flask_basicauth import BasicAuth
+from functools import wraps
 
 
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -19,11 +21,53 @@ APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER =  os.path.join(APP_ROOT, 'static/')
 
 
+
+
+
+
 app = Flask(__name__)
+app.config['SECRET_KEY']= 'yashkantharia'
+
+
+def check_token(func):
+	@wraps(func)
+	def wrapped(*args,**kwargs):
+		token = request.args.get('token')
+		if not token:
+			return jsonify({'message':'Missing Token'}),403
+		try:
+			d = jwt.decode(token, app.config["SECRET_KEY"])
+		except:
+			session['logged_in']=False
+			return jsonify({'message':'Invalid Token'}),403
+		return func(*args,**kwargs)
+	return wrapped
+
+
 
 @app.route("/")
-def hello():
-	url="nan"
+def index():
+
+	if not session.get('logged_in'):
+		return jsonify({'message':'Enter Credentials to login'}),401
+
+	else: 
+		return jsonify({'message':'use existing token or login again'})
+
+
+@app.route('/login')
+def login():
+	if request.args.get('username')=='yash' and request.args.get('password')=='webscrapperapi':
+		session['logged_in']=True
+		token = jwt.encode({'username':request.args.get('username'), 'exp':datetime.utcnow() + timedelta(minutes=10)}, app.config['SECRET_KEY'])
+		return jsonify({'token':token.decode('utf-8')})
+	else:
+		return make_response('unable to verify', 403, {'WWW-uthenticate':'Basic realm:"login required"'})
+
+@app.route('/auth')
+@check_token
+def auth():
+
 	url = request.args.get("url")
 	print(url)
 
@@ -36,6 +80,7 @@ def hello():
 		responseObject['error']='Bad request. Send parameter url with web site URL only'
 	else:
 		responseObject['statusCode'] = 200
+		print('test')
 
 
 		# target URL to scrap
@@ -102,7 +147,8 @@ def hello():
 		    else: 
 		      paid ="Unkown"
 
-		#Genereate summary of ratio 0.3
+		
+		#fetch text from the page
 		
 		#remove scripts and css
 		for s in data(['script', 'style']):
@@ -114,7 +160,27 @@ def hello():
 
 		article_text =  ' '.join(data.stripped_strings)
 
-		summary = summarize(article_text, ratio=0.3)
+		#summary = summarize(article_text, ratio=0.3)
+
+		#Make API call to meaningcloud for Summarization of text
+
+		querystring = {"key":"c1c06e488f5be2f75f2d78fcc46aa28e","txt":article_text,"sentences":"10"}
+
+		headers_summ = {
+		'User-Agent': "PostmanRuntime/7.19.0",
+		'Accept': "*/*",
+		'Cache-Control': "no-cache",
+		'Postman-Token': "f1733e8b-aac5-43a0-820e-2c44f8c23dd6,26322fee-b515-4baa-9f2a-d7c43142dd86",
+		'Host': "api.meaningcloud.com",
+		'Accept-Encoding': "gzip, deflate",
+		'Content-Length': "0",
+		'Connection': "keep-alive",
+		'cache-control': "no-cache"
+		}
+
+		response_summ = requests.request("POST",url='https://api.meaningcloud.com/summarization-1.0', headers=headers_summ, params=querystring)
+
+		summary=response_summ.json()['summary']
 
 		print(summary)
 
@@ -132,11 +198,6 @@ def hello():
 		img_url = url_for('static',filename=dest_filename)
 		#kill the web driver
 		driver.quit()
-
-
-
-
-
 
 
 		#Generate CSV 
